@@ -3,8 +3,12 @@
 const dialogflow = require('dialogflow');
 const structjsnon = require('./structjson');
 const config = require('../config/keys');
+const mongoose = require('mongoose');
+const registrationSchema = require('../models/Registration');
 
 const projectID = config.googleProjectID;
+const sessionID = config.dialogFlowSessionID;
+const languageCode = config.dialogFlowSessionLanguageCode;
 
 const credentials = {
   client_email:config.googleClientEmail,
@@ -12,19 +16,20 @@ const credentials = {
 }
 
 
-const sessionClient = new dialogflow.SessionsClient({projectID:projectID,credentials:credentials});
-const sessionPath = sessionClient.sessionPath(config.googleProjectID,config.dialogFlowSessionID);
+const sessionClient = new dialogflow.SessionsClient({projectID,credentials});
 
+const Registration = mongoose.model('registration');
 
 module.exports = {
-  textQuery: async function(text,parameters={}) {
+  textQuery: async function(text,userID,parameters={}) {
+    let sessionPath = sessionClient.sessionPath(projectID, sessionID + userID);
     let self = module.exports;
     const request = {
       session: sessionPath,
       queryInput: {
         text: {
           text: text,
-          languageCode: config.dialogFlowSessionLanguageCode ,
+          languageCode: languageCode ,
         },
       },
       queryParams:{
@@ -38,15 +43,16 @@ module.exports = {
     return responses;
   },
 
-  eventQuery: async function(event,parameters={}) {
+  eventQuery: async function(event,userID,parameters={}) {
     let self = module.exports;
+    let sessionPath = sessionClient.sessionPath(projectID, sessionID + userID);
     const request = {
       session: sessionPath,
       queryInput: {
         event: {
           name: event,
           parameters:structjsnon.jsonToStructProto(parameters),
-          languageCode: config.dialogFlowSessionLanguageCode ,
+          languageCode: languageCode ,
         },
       }
     };
@@ -56,6 +62,34 @@ module.exports = {
   },
 
   handleAction:function(responses){
+    let self = module.exports;
+    let queryResult = responses[0].queryResult;
+
+    switch (queryResult.action) {
+      case 'recommendcourses.recommendcourses-yes':
+        if(queryResult.allRequiredParamsPresent){
+          self.saveRegistration(queryResult.parameters.fields);
+        }
+        break;
+      default:
+
+    }
+
     return responses;
+  },
+
+  saveRegistration: function(fields){
+    const registration = new Registration({
+      name:fields.name.stringValue,
+      address:fields.address.stringValue,
+      phone:fields.phone.stringValue,
+      email:fields.email.stringValue,
+      dateSent:Date.now()
+    });
+    try{
+      registration.save();
+    } catch(err){
+      console.log(err);
+    }
   }
 }
